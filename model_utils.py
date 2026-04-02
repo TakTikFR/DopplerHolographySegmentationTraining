@@ -126,3 +126,88 @@ def measure_inference_time(model, input_tensor, device='cuda', iterations=100):
     avg_time = (end - start) / iterations
     print(f"Average inference time per run: {avg_time * 1000:.3f} ms")
     return avg_time
+
+def measure_onnx_inference_time(session, input_tensor, iterations=100, warmup=10):
+    # Convert input tensor to numpy
+    if isinstance(input_tensor, torch.Tensor):
+        input_tensor = input_tensor.cpu().numpy()
+
+    # Get input name for ONNX session
+    input_name = session.get_inputs()[0].name
+
+    # Warm-up
+    for _ in range(warmup):
+        _ = session.run(None, {input_name: input_tensor})
+
+    # Timing
+    start = time.time()
+    for _ in range(iterations):
+        _ = session.run(None, {input_name: input_tensor})
+    end = time.time()
+
+    avg_time = (end - start) / iterations
+    print(f"Average ONNX inference time per run: {avg_time * 1000:.3f} ms")
+    return avg_time
+
+def count_onnx_parameters(onnx_path):
+    model = onnx.load(onnx_path)
+    param_count = 0
+
+    for tensor in model.graph.initializer:
+        param_array = onnx.numpy_helper.to_array(tensor)
+        param_count += param_array.size
+
+    print(f"Total number of parameters: {param_count:,}")
+    return param_count
+
+class ONNXModel:
+    def __init__(self, path, device='cuda'):
+        providers = ['CUDAExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
+        self.session = ort.InferenceSession(path, providers=providers)
+        self.input_name = self.session.get_inputs()[0].name
+        self.output_name = self.session.get_outputs()[0].name
+        self.path = path
+
+    def predict(self, xb):
+        xb_np = xb.detach().cpu().numpy()
+        pred = self.session.run([self.output_name], {self.input_name: xb_np})[0]
+        return torch.tensor(pred, device=xb.device)
+
+    def inference_time(self, input_tensor):
+        return measure_onnx_inference_time(self.session, input_tensor)
+
+    def num_parameters(self):
+        return count_onnx_parameters(self.path)
+    
+class TorchScriptModel:
+    def __init__(self, path, device='cuda'):
+        self.model = torch.jit.load(path).to(device).eval()
+        self.path = path
+
+    def predict(self, xb):
+        with torch.no_grad():
+            return self.model(xb)
+
+    def inference_time(self, input_tensor):
+        return measure_inference_time(self.model, input_tensor)
+
+    def num_parameters(self):
+        return count_parameters(self.model)
+    
+
+class StateDictModel:
+    def __init__(self, path, model_fn, device='cuda'):
+        self.model = model_fn().to(device)
+        self.model.load_state_dict(torch.load(path, map_location=device))
+        self.model.eval()
+        self.path = path
+
+    def predict(self, xb):
+        with torch.no_grad():
+            return self.model(xb)
+
+    def inference_time(self, input_tensor):
+        return measure_inference_time(self.model, input_tensor)
+
+    def num_parameters(self):
+        return count_parameters(self.model)

@@ -48,7 +48,7 @@ class ArteryVeinDataset:
         sample = self.data[idx]
         x = sample[0]  # PIL Image
         y = sample[1]  # PIL Image
-        return PILImage.create(x.astype(np.uint8)), y.astype(np.uint8)
+        return PILImage.create(x.astype(np.uint8)), PILMask.create(y)
     
 
 # def multi2onehot(x:np.ndarray, # Non one-hot encoded targs
