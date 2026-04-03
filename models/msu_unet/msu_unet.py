@@ -254,14 +254,20 @@ class U_Net(nn.Module):
         return d1
 
 class MSU_Net(nn.Module):
-    def __init__(self, img_ch=1, output_ch=1):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, in_channels=1, n_classes=1):
         super(MSU_Net, self).__init__()
 
         filters_number = [32, 64, 128, 256, 512]
 
         self.Maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        self.Conv1 = conv_3_1(ch_in=img_ch, ch_out=filters_number[0])
+        self.Conv1 = conv_3_1(ch_in=in_channels, ch_out=filters_number[0])
         self.Conv2 = conv_3_1(ch_in=filters_number[0], ch_out=filters_number[1])
         self.Conv3 = conv_3_1(ch_in=filters_number[1], ch_out=filters_number[2])
         self.Conv4 = conv_3_1(ch_in=filters_number[2], ch_out=filters_number[3])
@@ -279,7 +285,7 @@ class MSU_Net(nn.Module):
         self.Up2 = up_conv(ch_in=filters_number[1], ch_out=filters_number[0])
         self.Up_conv2 = conv_3_1(ch_in=filters_number[1], ch_out=filters_number[0])
 
-        self.Conv_1x1 = nn.Conv2d(filters_number[0], output_ch, kernel_size=1, stride=1, padding=0)
+        self.Conv_1x1 = nn.Conv2d(filters_number[0], n_classes, kernel_size=1, stride=1, padding=0)
 
     def forward(self, x):
 

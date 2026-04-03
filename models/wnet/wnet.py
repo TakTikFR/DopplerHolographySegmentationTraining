@@ -128,10 +128,16 @@ class UNet(nn.Module):
         return self.final(x)
 
 class WNet(torch.nn.Module):
-    def __init__(self, n_classes=1, in_c=3, layers=(8,16,32), conv_bridge=True, shortcut=True, mode='train'):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, n_classes=1, in_channels=3, layers=(8,16,32), conv_bridge=True, shortcut=True, mode='train'):
         super(WNet, self).__init__()
-        self.unet1 = UNet(in_c=in_c, n_classes=n_classes, layers=layers, conv_bridge=conv_bridge, shortcut=shortcut)
-        self.unet2 = UNet(in_c=in_c+n_classes, n_classes=n_classes, layers=layers, conv_bridge=conv_bridge, shortcut=shortcut)
+        self.unet1 = UNet(in_c=in_channels, n_classes=n_classes, layers=layers, conv_bridge=conv_bridge, shortcut=shortcut)
+        self.unet2 = UNet(in_c=in_channels+n_classes, n_classes=n_classes, layers=layers, conv_bridge=conv_bridge, shortcut=shortcut)
         self.n_classes = n_classes
         self.mode=mode
 

@@ -50,13 +50,19 @@ class RRCNN_block(nn.Module):
         return x+x1
     
 class R2UNet(nn.Module):
-    def __init__(self,img_ch=3,output_ch=1,t=2):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+
+    def __init__(self,in_channels=3,n_classes=1,t=2):
         super(R2UNet,self).__init__()
         
         self.Maxpool = nn.MaxPool2d(kernel_size=2,stride=2)
         self.Upsample = nn.Upsample(scale_factor=2)
 
-        self.RRCNN1 = RRCNN_block(ch_in=img_ch,ch_out=64,t=t)
+        self.RRCNN1 = RRCNN_block(ch_in=in_channels,ch_out=64,t=t)
 
         self.RRCNN2 = RRCNN_block(ch_in=64,ch_out=128,t=t)
         
@@ -79,7 +85,7 @@ class R2UNet(nn.Module):
         self.Up2 = up_conv(ch_in=128,ch_out=64)
         self.Up_RRCNN2 = RRCNN_block(ch_in=128, ch_out=64,t=t)
 
-        self.Conv_1x1 = nn.Conv2d(64,output_ch,kernel_size=1,stride=1,padding=0)
+        self.Conv_1x1 = nn.Conv2d(64,n_classes,kernel_size=1,stride=1,padding=0)
 
 
     def forward(self,x):

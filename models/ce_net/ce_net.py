@@ -96,13 +96,19 @@ def _update_first_layer(model, n_in, pretrained):
     setattr(parent, name, new_layer)
 
 class CE_Net(nn.Module):
-    def __init__(self, n_in=1, num_classes=2, pretrained=True, dropout=0.2, pixel_shuffle=False, self_attention=False):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, in_channels=1, n_classes=2, pretrained=True, dropout=0.2, pixel_shuffle=False, self_attention=False):
         super().__init__()
 
         # Load pretrained ResNet34
         resnet = models.resnet34(weights=models.ResNet34_Weights.DEFAULT if pretrained else None)
 
-        _update_first_layer(resnet, n_in, pretrained)
+        _update_first_layer(resnet, in_channels, pretrained)
 
         # Extract ResNet34 encoder layers
         self.l0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu)  # 64 channels
@@ -142,7 +148,7 @@ class CE_Net(nn.Module):
 
         # self.shuf = ICNRPixelShuffleUpsample(96, 96)
 
-        self.final_conv = nn.Conv2d(96, num_classes, kernel_size=1)
+        self.final_conv = nn.Conv2d(96, n_classes, kernel_size=1)
 
     def forward(self, x):
         # Encoder

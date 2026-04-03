@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import torch.nn.functional as F
 from torch.nn import ModuleList
 import torch.nn as nn
@@ -5,9 +7,7 @@ import torch
 
 from models.unet_block import ICNRPixelShuffleUpsample, DoubleConv, Down, Up, ConvLayer, OutConv
 
-import torch.nn.functional as F
-from torch.nn import ModuleList
-import torch
+import re
 
 class UNet(nn.Module):
     def __init__(self, n_channels, n_classes, out_channels=32):
@@ -69,14 +69,26 @@ class MiniUNet(nn.Module):
         return x1, x, logits
 
 class Iternet(nn.Module):
-    def __init__(self, n_channels, n_classes, out_channels=32, iterations=3):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        iterations = re.match(rf"IterNet_(\d+)_.*", filename).group(1)
+        if iterations is not None and int(iterations) > 0:
+            iterations = int(iterations)
+        else:
+            raise ValueError("Invalid weight file name. Expected format: 'IterNet_<iterations>_<loss>'")
+        instance = cls(in_channels=in_channels, n_classes=n_classes, iterations=iterations)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+
+    def __init__(self, in_channels, n_classes, out_channels=32, iterations=3):
         super(Iternet, self).__init__()
-        self.n_channels = n_channels
+        self.n_channels = in_channels
         self.n_classes = n_classes
         self.iterations = iterations
 
         # define the network UNet2 layer
-        self.model_unet = UNet(n_channels=n_channels,
+        self.model_unet = UNet(n_channels=in_channels,
                                n_classes=n_classes, out_channels=out_channels)
 
         # define the network MiniUNet layers

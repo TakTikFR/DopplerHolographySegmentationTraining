@@ -193,14 +193,12 @@ class TorchScriptModel:
 
     def num_parameters(self):
         return count_parameters(self.model)
-    
+
+
 
 class StateDictModel:
-    def __init__(self, path, model_fn, device='cuda'):
-        self.model = model_fn().to(device)
-        self.model.load_state_dict(torch.load(path, map_location=device))
-        self.model.eval()
-        self.path = path
+    def __init__(self, path, model_fn, in_channels=1, n_classes=1, device='cuda'):
+        self.model = model_fn.init_from_state_dict(in_channels=in_channels, n_classes=n_classes, weight_file=path).to(device).eval()
 
     def predict(self, xb):
         with torch.no_grad():

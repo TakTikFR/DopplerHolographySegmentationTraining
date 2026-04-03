@@ -1,6 +1,7 @@
 from __future__ import annotations
 import itertools
 from collections.abc import Sequence
+from pathlib import Path
 from monai.networks.blocks import MLPBlock as Mlp
 from monai.networks.blocks import PatchEmbed, UnetOutBlock, UnetrBasicBlock, UnetrUpBlock
 from monai.networks.layers import DropPath, trunc_normal_
@@ -21,6 +22,8 @@ import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from torch.nn import LayerNorm
 from typing_extensions import Final
+
+import re
 
 rearrange, _ = optional_import("einops", name="rearrange")
 
@@ -118,11 +121,23 @@ class CSTANet(nn.Module):
 
     patch_size: Final[int] = 2
 
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        img_size = re.match(rf"CSTANet_(\d+)_.*", filename).group(1)
+        if img_size is not None and int(img_size) > 0:
+            img_size = int(img_size)
+        else:
+            raise ValueError("Invalid weight file name. Expected format: 'CSTANet_<img_size>_<loss>'")
+        instance = cls(in_channels=in_channels, n_classes=n_classes, img_size=img_size)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+
     def __init__(
         self,
         img_size: Sequence[int] | int,
         in_channels: int,
-        out_channels: int,
+        n_classes: int,
         depths: Sequence[int] = (2, 2, 2, 2),
         num_heads: Sequence[int] = (3, 6, 12, 24),
         feature_size: int = 24,
@@ -260,7 +275,7 @@ class CSTANet(nn.Module):
         self.encoder3 = Encoder3(spatial_dims=spatial_dims, feature_size=feature_size)
         self.encoder4 = Encoder4(spatial_dims=spatial_dims, feature_size=feature_size)
 
-        self.out = UnetOutBlock(spatial_dims=spatial_dims, in_channels= 2*feature_size, out_channels=out_channels)
+        self.out = UnetOutBlock(spatial_dims=spatial_dims, in_channels= 2*feature_size, out_channels=n_classes)
 
 
     @torch.jit.unused

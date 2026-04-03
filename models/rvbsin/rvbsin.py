@@ -1,3 +1,6 @@
+from pathlib import Path
+import re
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -292,11 +295,23 @@ class SINVGG19(nn.Module):
 
 class VesselSegNetwork(nn.Module):
     """Custom vessel segmentation network utilising the SIN architecture (PyTorch)."""
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        match = re.match(rf"RVB_SIN_(\d+)_(\d+).*", filename)
+        if match and len(match.groups()) == 2:
+            h, w = match.groups()[0], match.groups()[1]
+        else:
+            raise ValueError("Invalid weight file name. Expected format: 'RVB_SIN_<img_height>_<img_width>_<loss>'")
+        instance = cls(base_input_shape=(h, w, in_channels), n_classes=n_classes, base_filters=32)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
 
-    def __init__(self, base_input_shape, out_channels, base_filters, batch_norm=False, trainable=True):
+    def __init__(self, base_input_shape, n_classes, base_filters, batch_norm=False, trainable=True):
         """
         Args:
             base_input_shape: The input shape of the network (H, W, C).
+            n_classes: Number of output classes.
             base_filters: Number of filters in the first layer.
             batch_norm: Whether to use batch normalisation.
             trainable: If False, parameters are frozen.
@@ -314,7 +329,7 @@ class VesselSegNetwork(nn.Module):
         # Output convolution (1x1 conv)
         self.out_conv = nn.Conv2d(
             in_channels=base_filters,  # you may need to adapt this depending on SINBasicUNET's output
-            out_channels=out_channels,
+            out_channels=n_classes,
             kernel_size=1,
             stride=1,
             padding=0,
