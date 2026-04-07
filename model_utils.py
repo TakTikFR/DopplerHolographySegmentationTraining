@@ -160,7 +160,25 @@ def count_onnx_parameters(onnx_path):
     print(f"Total number of parameters: {param_count:,}")
     return param_count
 
-class ONNXModel:
+class ModelWrapper:
+    def __init__(self, model, device='cuda'):
+        self.model = model.to(device).eval()
+        self.device = device
+
+    def predict(self, xb):
+        with torch.no_grad():
+            return self.model(xb)
+
+    def inference_time(self, input_tensor):
+        return measure_inference_time(self.model, input_tensor, device=self.device)
+
+    def num_parameters(self):
+        return count_parameters(self.model)
+    
+    def forward(self, xb):
+        return self.predict(xb)
+
+class ONNXModel(ModelWrapper):
     def __init__(self, path, device='cuda'):
         providers = ['CUDAExecutionProvider'] if device == 'cuda' else ['CPUExecutionProvider']
         self.session = ort.InferenceSession(path, providers=providers)
@@ -179,7 +197,7 @@ class ONNXModel:
     def num_parameters(self):
         return count_onnx_parameters(self.path)
     
-class TorchScriptModel:
+class TorchScriptModel(ModelWrapper):
     def __init__(self, path, device='cuda'):
         self.model = torch.jit.load(path).to(device).eval()
         self.path = path
@@ -196,7 +214,7 @@ class TorchScriptModel:
 
 
 
-class StateDictModel:
+class StateDictModel(ModelWrapper):
     def __init__(self, path, model_fn, in_channels=1, n_classes=1, device='cuda'):
         self.model = model_fn.init_from_state_dict(in_channels=in_channels, n_classes=n_classes, weight_file=path).to(device).eval()
 

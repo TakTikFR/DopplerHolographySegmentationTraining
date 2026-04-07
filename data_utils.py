@@ -213,3 +213,86 @@ def multi2onehot_tensor(x:torch.Tensor, # Non one-hot encoded targs
 
 #     out.release()
 #     print(f"Saved video to {filename}")
+
+def multi2onehot(x:np.ndarray, # Non one-hot encoded targs
+        axis:int=2 # The axis to stack for encoding (class dimension)
+    ) -> np.ndarray:
+        "Creates one binary mask per class"
+        return np.stack([np.where((x==1) | (x==3), 1, 0), np.where((x==2) | (x==3), 1, 0)], axis=axis)
+
+
+def mask_to_rgb(mask):
+    # Create an RGB image
+
+    if len(mask.shape) == 2:
+        one_hot_masks = multi2onehot(mask) # Convert to one-hot encoding
+    else:
+        one_hot_masks = mask.transpose(1, 2, 0)  # Change shape to [H, W, C]
+
+    rgb_image = np.zeros((one_hot_masks.shape[0], one_hot_masks.shape[1], 3), dtype=np.uint8)  # Shape: [H, W, 3]
+
+    # print(one_hot_masks.shape)
+    
+    # Map the first mask to the red channel and the second to the blue channel
+    rgb_image[..., 0] = one_hot_masks[:,:,0] * 255  # Red channel
+    rgb_image[..., 2] = one_hot_masks[:,:,1] * 255  # Blue channel
+
+    return Image.fromarray(rgb_image)
+
+def split_channels(inputs, channels):
+    lists = [[] for _ in range(len(inputs))]
+    for i in range(len(inputs)):
+        for c in range(channels):
+            lists[i].append(inputs[i][c,:,:])
+    return lists
+
+def show_masks(inputs, masks, masks_pred=None, multi=False, cmap='viridis', n=20):
+    nb_rows = min(len(inputs), n)
+    channels = 1
+    # plot images and masks
+
+    if cmap == 'gray':
+        a = inputs[0]
+        channels = 1 if len(a.shape) == 2 else a.shape[0]
+        if channels != 1:
+            inputs = split_channels(inputs, channels)
+    
+    nb_cols = channels + (1 if masks_pred is None else 2)
+    fig, axes = plt.subplots(nb_rows, nb_cols, figsize=(5*nb_cols, 5*nb_rows))
+    
+    for idx in range(nb_rows):
+        for c in range(channels):
+            axes[idx][c].imshow(Image.fromarray(inputs[idx][c]*255), cmap=cmap)
+            # axes[idx][c].set_title(inputs[idx][c])
+            axes[idx][channels].imshow(mask_to_rgb(masks[idx]) if multi else masks[idx], cmap="gray")
+        if masks_pred is not None:
+            axes[idx][channels+1].imshow(mask_to_rgb(masks_pred[idx]) if multi else masks_pred[idx][0], cmap="gray")
+        
+    # add subtitles
+    for c in range(channels):
+        axes[0][c].set_title('Input')
+    axes[0][channels].set_title('Ground truth masks')
+    if masks_pred is not None:
+        axes[0][channels + 1].set_title('Predicted masks')
+
+    plt.show()
+
+def predict_and_show(model, val_loader, cmap='viridis', multi=None, argmax=False, n=20):
+    # predict masks
+    masks_pred = []
+    inputs = []
+    targets = []
+    multi = multi
+    for input, target in iter(val_loader):
+        mask = model.predict(input.cuda())
+        multi = mask.shape[1] > 1
+        if argmax:
+            mask = torch.argmax(mask, dim=1)
+        else:  # If we have several class, we need to apply a sigmoid and get the predictions
+            mask = torch.sigmoid(mask)
+            mask[mask<0.5] = 0
+            mask[mask>=0.5] = 1
+        inputs.append(input.squeeze(0).cpu().numpy())
+        masks_pred.append(mask.squeeze(0).cpu().detach().numpy())
+        targets.append(target.squeeze(0).cpu().numpy())
+    show_masks(inputs, targets, masks_pred, multi=multi, cmap=cmap, n=n)

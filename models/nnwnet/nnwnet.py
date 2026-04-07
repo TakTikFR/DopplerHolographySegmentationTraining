@@ -174,13 +174,13 @@ class WNet2D(nn.Module):
         instance.load_state_dict(torch.load(weight_file))
         return instance
 
-    def __init__(self, in_channel, n_classes, deep_supervised, layer_channel=[16, 32, 64, 128, 256], global_dim=[8, 16, 32, 64, 128], num_heads=[1, 2, 4, 8], sr_ratio=[8, 4, 2, 1]):
+    def __init__(self, in_channels, n_classes, deep_supervised, layer_channel=[16, 32, 64, 128, 256], global_dim=[8, 16, 32, 64, 128], num_heads=[1, 2, 4, 8], sr_ratio=[8, 4, 2, 1]):
         super(WNet2D, self).__init__()
 
         self.deep_supervised = deep_supervised
 
         self.input_l0 = nn.Sequential(
-            nn.Conv2d(in_channel, layer_channel[0], kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels, layer_channel[0], kernel_size=3, stride=1, padding=1),
             BNNorm2d(layer_channel[0]),
             Activation(),
             nn.Conv2d(layer_channel[0], layer_channel[0], kernel_size=3, stride=1, padding=1),
