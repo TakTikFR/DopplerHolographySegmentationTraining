@@ -262,7 +262,7 @@ def show_masks(inputs, masks, masks_pred=None, multi=False, cmap='viridis', n=20
     
     for idx in range(nb_rows):
         for c in range(channels):
-            axes[idx][c].imshow(Image.fromarray(inputs[idx][c]*255), cmap=cmap)
+            axes[idx][c].imshow(Image.fromarray((inputs[idx][c]*255).astype(np.uint8)), cmap=cmap)
             # axes[idx][c].set_title(inputs[idx][c])
             axes[idx][channels].imshow(mask_to_rgb(masks[idx]) if multi else masks[idx], cmap="gray")
         if masks_pred is not None:

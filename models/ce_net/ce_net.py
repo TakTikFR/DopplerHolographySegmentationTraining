@@ -102,7 +102,7 @@ class CE_Net(nn.Module):
         instance.load_state_dict(torch.load(weight_file))
         return instance
     
-    def __init__(self, in_channels=1, n_classes=2, pretrained=True, dropout=0.2, pixel_shuffle=False, self_attention=False):
+    def __init__(self, in_channels=1, n_classes=2, pretrained=True, dropout=0.2, upsample_method="deconv", self_attention=False):
         super().__init__()
 
         # Load pretrained ResNet34
@@ -141,10 +141,10 @@ class CE_Net(nn.Module):
         self.rmp = RMPBlock(in_channels=512, out_channels=512)
 
         # Decoder with skip connections, batch norm, and dropout
-        self.decoder4 = UNetBlock(512, 256, icnr=pixel_shuffle)
-        self.decoder3 = UNetBlock(512, 128, icnr=pixel_shuffle, self_attention=self_attention)
-        self.decoder2 = UNetBlock(384, 64, icnr=pixel_shuffle)
-        self.decoder1 = UNetBlock(256, 64, final=True, icnr=pixel_shuffle)
+        self.decoder4 = UNetBlock(512, 256, upsample_method=upsample_method)
+        self.decoder3 = UNetBlock(512, 128, upsample_method=upsample_method, self_attention=self_attention)
+        self.decoder2 = UNetBlock(384, 64, upsample_method=upsample_method)
+        self.decoder1 = UNetBlock(256, 64, final=True, upsample_method=upsample_method)
 
         # self.shuf = ICNRPixelShuffleUpsample(96, 96)
 

@@ -124,17 +124,19 @@ class CSTANet(nn.Module):
     @classmethod
     def init_from_state_dict(cls, in_channels, n_classes, weight_file):
         filename = Path(weight_file).name
-        img_size = re.match(rf"CSTANet_(\d+)_.*", filename).group(1)
-        if img_size is not None and int(img_size) > 0:
+        img_size = re.match(rf"CSTANet_(\d+)_(\d)_.*", filename).group(1)
+        spatial_dim = re.match(rf"CSTANet_(\d+)_(\d)_.*", filename).group(2)
+        if img_size is not None and int(img_size) > 0 and spatial_dim is not None and int(spatial_dim) in (2, 3):
             img_size = int(img_size)
+            spatial_dim = int(spatial_dim)
         else:
-            raise ValueError("Invalid weight file name. Expected format: 'CSTANet_<img_size>_<loss>'")
-        instance = cls(in_channels=in_channels, n_classes=n_classes, img_size=img_size)
+            raise ValueError("Invalid weight file name. Expected format: 'CSTANet_<img_size>_<spatial_dim>_<loss>'")
+        instance = cls(in_channels=in_channels, n_classes=n_classes, img_size=img_size, spatial_dims=spatial_dim)
         instance.load_state_dict(torch.load(weight_file))
         return instance
 
     def __init__(
-        self,
+        self,   
         img_size: Sequence[int] | int,
         in_channels: int,
         n_classes: int,

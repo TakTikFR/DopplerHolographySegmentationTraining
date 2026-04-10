@@ -110,22 +110,18 @@ class SwinUnet(nn.Module):
         instance.load_state_dict(torch.load(weight_file))
         return instance
     
-    def __init__(self, img_size=512, num_classes=1, window_size=7, zero_head=False):
+    def __init__(self, in_channels=3, img_size=512, n_classes=1, window_size=7, zero_head=False):
         super(SwinUnet, self).__init__()
-        self.img_size = img_size
-        self.num_classes = num_classes
-        self.window_size = window_size
-        self.zero_head = zero_head
 
         self.swin_unet = SwinTransformerSys(
-            img_size=self.img_size,
+            img_size=img_size,
             patch_size=4,
-            in_chans=3,
-            num_classes=self.num_classes,
+            in_chans=in_channels,
+            num_classes=n_classes,
             embed_dim=96,
             depths=[2, 2, 6, 2],
             num_heads=[3, 6, 12, 24],
-            window_size=self.window_size,
+            window_size=window_size,
             mlp_ratio=4.,
             qkv_bias=True,
             qk_scale=None,

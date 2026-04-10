@@ -303,7 +303,7 @@ class VesselSegNetwork(nn.Module):
             h, w = match.groups()[0], match.groups()[1]
         else:
             raise ValueError("Invalid weight file name. Expected format: 'RVB_SIN_<img_height>_<img_width>_<loss>'")
-        instance = cls(base_input_shape=(h, w, in_channels), n_classes=n_classes, base_filters=32)
+        instance = cls(base_input_shape=(int(h), int(w), in_channels), n_classes=n_classes, base_filters=32)
         instance.load_state_dict(torch.load(weight_file))
         return instance
 
