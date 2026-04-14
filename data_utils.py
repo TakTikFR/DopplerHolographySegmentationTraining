@@ -296,3 +296,22 @@ def predict_and_show(model, val_loader, cmap='viridis', multi=None, argmax=False
         masks_pred.append(mask.squeeze(0).cpu().detach().numpy())
         targets.append(target.squeeze(0).cpu().numpy())
     show_masks(inputs, targets, masks_pred, multi=multi, cmap=cmap, n=n)
+
+def combine_binary_masks(mask_red: np.ndarray, mask_blue: np.ndarray) -> Image.Image:
+    """
+    Combine two binary numpy arrays into an RGB image.
+    - mask_red will appear in the red channel.
+    - mask_blue will appear in the blue channel.
+    """
+    # Ensure both are binary and same shape
+    assert mask_red.shape == mask_blue.shape, "Masks must have the same shape"
+    
+    # Normalize to 0–255 uint8
+    red = (mask_red.astype(np.uint8)) * 255
+    blue = (mask_blue.astype(np.uint8)) * 255
+    
+    # Create RGB channels (no green)
+    rgb = np.stack([red, np.zeros_like(red), blue], axis=-1)
+    
+    # Convert to PIL image for easy display or saving
+    return Image.fromarray(rgb)
