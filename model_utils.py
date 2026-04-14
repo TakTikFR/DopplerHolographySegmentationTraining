@@ -214,7 +214,7 @@ class TorchScriptModel(ModelWrapper):
 
 
 
-class StateDictModel(ModelWrapper):
+class StateDictModel:
     def __init__(self, path, model_fn, in_channels=1, n_classes=1, device='cuda'):
         self.model = model_fn.init_from_state_dict(in_channels=in_channels, n_classes=n_classes, weight_file=path).to(device).eval()
 
