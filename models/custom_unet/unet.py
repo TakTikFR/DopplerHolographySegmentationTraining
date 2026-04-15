@@ -8,9 +8,9 @@ class UNet(nn.Module):
     @classmethod
     def init_from_state_dict(cls, in_channels, n_classes, weight_file):
         filename = Path(weight_file).name
-        upsample_method = re.match(rf"UNet_(\w+)_.*", filename).group(1)
+        upsample_method = re.match(rf"UNet_([a-zA-Z]+).*", filename).group(1)
         if upsample_method is None or upsample_method not in ['bilinear', 'deconv', 'pixelshuffle']:
-            raise ValueError("Invalid weight file name. Expected format: 'UNet_<upsample>_<loss>'. Upsample should be 'bilinear', 'deconv', or 'pixelshuffle'.")
+            raise ValueError(f"Invalid weight file name {filename}. Expected format: 'UNet_<upsample>_<loss>'. Upsample should be 'bilinear', 'deconv', or 'pixelshuffle'.")
         
         instance = cls(in_channels=in_channels, n_classes=n_classes, upsample=upsample_method)
         instance.load_state_dict(torch.load(weight_file))

@@ -2,12 +2,54 @@ import torch
 import numpy as np
 from scipy.spatial.distance import directed_hausdorff
 from scipy.spatial import cKDTree
+import data_utils
+from skimage.morphology import skeletonize
+
+
+###################### Utility functions for multi-label metrics ######################
+
+def get_num_class(nb_classes):
+    real_nb = 1
+    overlapping=0
+
+    while real_nb + overlapping != nb_classes:
+        overlapping += real_nb
+        real_nb += 1
+
+        if overlapping + real_nb > nb_classes:
+            print("Wrong number of class")
+            return
+
+    return real_nb
+
+def map_overlapping_classes(nb_classes):
+    """
+    Function to get the overlapping classes for the Dice coefficient.
+    Args:
+        nb_classes (int): Number of classes in the dataset.
+        include_background (bool): whether background must be counted as a class. If False (default), 
+    Returns:
+        list: mapping of overlapping classes. Each element is the list of overlapping classes for the corresponding class.
+    Example:
+        >>> get_overlapping_classes(2)
+        [[3], [3]]
+        >>> get_overlapping_classes(3)
+        [[4, 5], [4, 6], [5, 6]]
+    """
+    overlap_mapping = [[] for _ in range(nb_classes)]
+    for i in range(nb_classes-1):
+        for j in range(i+1, nb_classes):
+            overlap_mapping[i].append(nb_classes+i+j)
+            overlap_mapping[j].append(nb_classes+i+j)
+    return overlap_mapping
 
 def multi2onehot_tensor(x:torch.Tensor, # Non one-hot encoded targs
         dim:int=2 # The axis to stack for encoding (class dimension)
     ) -> torch.Tensor:
         "Creates one binary mask per class"
         return torch.stack([torch.where((x==1) | (x==3), 1, 0), torch.where((x==2) | (x==3), 1, 0)], dim=dim)
+
+###################### Sensitivity ######################
 
 def sensitivity(p, t):
     tp = (p & t).float().sum()
@@ -52,41 +94,7 @@ def sensitivity_multi(preds, targets, return_class_score=False):
         return sensitivities
     return np.average(sensitivities, weights=target_cls_sizes)
 
-
-def get_num_class(nb_classes):
-    real_nb = 1
-    overlapping=0
-
-    while real_nb + overlapping != nb_classes:
-        overlapping += real_nb
-        real_nb += 1
-
-        if overlapping + real_nb > nb_classes:
-            print("Wrong number of class")
-            return
-
-    return real_nb
-
-def map_overlapping_classes(nb_classes):
-    """
-    Function to get the overlapping classes for the Dice coefficient.
-    Args:
-        nb_classes (int): Number of classes in the dataset.
-        include_background (bool): whether background must be counted as a class. If False (default), 
-    Returns:
-        list: mapping of overlapping classes. Each element is the list of overlapping classes for the corresponding class.
-    Example:
-        >>> get_overlapping_classes(2)
-        [[3], [3]]
-        >>> get_overlapping_classes(3)
-        [[4, 5], [4, 6], [5, 6]]
-    """
-    overlap_mapping = [[] for _ in range(nb_classes)]
-    for i in range(nb_classes-1):
-        for j in range(i+1, nb_classes):
-            overlap_mapping[i].append(nb_classes+i+j)
-            overlap_mapping[j].append(nb_classes+i+j)
-    return overlap_mapping
+###################### Hausdorff Distance ######################
 
 def hausdorff_distance(A, B):
     """
@@ -139,7 +147,7 @@ def hausdorff_percentile_optimized(A, B, percentile=95):
     
     return HD
 
-def hausdorff_dist(preds, targets, return_class_hd = False, percentile=95):
+def hausdorff_dist_multi(preds, targets, return_class_hd = False, percentile=95):
     num_classes=get_num_class(preds.shape[1]-1)
     
     # Convert logits to class predictions (argmax)
@@ -173,8 +181,39 @@ def hausdorff_dist(preds, targets, return_class_hd = False, percentile=95):
 
     return np.average(hd_scores, weights=target_cls_sizes)
 
+def hausdorff_dist_one_hot(preds, targets, return_class_hd = False, percentile=95, rrwnet=False):
+    if type(preds) == list:
+        preds = preds[-1]
+    if rrwnet:
+        targets = data_utils.multi2onehot_tensor(targets, dim=1)
+        targets = targets[:,:2,:,:]
+        preds = preds[:,:2,:,:]
+        
+    hd_scores = []
+    if preds.unique() != [0,1]:
+        preds = torch.sigmoid(preds) > 0.5
+            # If there is no channel dimension, add one
+    if len(targets.shape) == 3:
+        targets = targets.view(targets.shape[0], preds.shape[1], targets.shape[1], targets.shape[2])
+    try :
+        for cls in range(preds.shape[1]):
+            if percentile == 100:
+                hd = hausdorff_distance(np.argwhere(preds[:,cls,:,:].cpu().numpy()==1), np.argwhere(targets[:,cls,:,:].cpu().numpy()==1))
+            else:
+                hd = hausdorff_percentile_optimized(np.argwhere(preds[:,cls,:,:].cpu().numpy()==1), np.argwhere(targets[:,cls,:,:].cpu().numpy()==1), percentile=percentile)
+            hd_scores.append(hd)
+    except Exception as e:
+        print(f"Error computing Hausdorff Distance: {e}")
+        hd_scores.append(np.nan)
 
-def dice_overlapp(preds, targets, return_class_score = False, smooth=1e-6):
+    # Return mean Hausdorff Distance over foreground classes
+    if return_class_hd:
+        return hd_scores
+    return np.nanmean(hd_scores)
+
+###################### Dice ######################
+
+def dice_multi(preds, targets, return_class_score = False, smooth=1e-6):
     """
     Function to calculate the Dice coefficient, when the input is a one-hot encoded tensor, with overlapping classes predicted as a separate class.
     The function returns the Dice coefficient for each class, and the mean Dice coefficient over all classes.
@@ -229,21 +268,14 @@ def dice_overlapp(preds, targets, return_class_score = False, smooth=1e-6):
     
     return np.average(dice_scores, weights=target_cls_sizes)
 
-def dice_metric(pred, target):
-    # Flatten the tensors
-    pred = pred.view(-1)
-    target = target.view(-1)
-    
-    # Compute intersection and union
-    intersection = (pred * target).sum()
-    union = pred.sum() + target.sum()
-    
-    # Calculate Dice coefficient
-    dice = 1 - (2.0 * intersection) / (union + 1e-8)  # Add small epsilon to avoid division by zero
-    return dice
+def dice_one_hot(pred, target, rrwnet=False):
+    if type(pred) == list:
+        pred = pred[-1]
+    if rrwnet:
+        target = data_utils.multi2onehot_tensor(target, dim=1)
+        target = target[:,:2,:,:]
+        pred = pred[:,:2,:,:]
 
-def dice(pred, target):
-    # print(pred.unique())
     if pred.unique() != [0,1]:
         pred = torch.sigmoid(pred) > 0.5
     # print(pred.unique())
@@ -264,9 +296,7 @@ def dice(pred, target):
     dice = (2.0 * intersection) / (union + 1e-8)  # Add small epsilon to avoid division by zero
     return dice.mean()
 
-from fastai.vision.all import *
-from skimage.morphology import skeletonize
-import numpy as np
+###################### clDice ######################
 
 def cl_score(v, s):
     """[this function computes the skeleton volume overlap]
@@ -346,3 +376,45 @@ def multi_label_clDice(pred, target, return_class_score=False):
         return cldice_scores
     
     return np.average(cldice_scores, weights=target_cls_sizes)
+
+def clDice_one_hot(p, t, rrwnet=False):
+    """[this function computes the cldice metric]
+
+    Args:
+        pred ([bool]): [predicted image]
+        target ([bool]): [ground truth image]
+
+    Returns:
+        [float]: [cldice metric]
+    """
+    if type(p) == list:
+        p = p[-1]
+    if rrwnet:
+        t = data_utils.multi2onehot_tensor(t, dim=1)
+        t = t[:,:2,:,:]
+        p = p[:,:2,:,:]
+
+    tprec, tsens = 1e-8, 1e-8
+    # print(p.shape, t.shape)
+    nb_batches = p.shape[0]
+    nb_classes = p.shape[1]
+
+    if len(t.shape) < len(p.shape):
+        t = t.unsqueeze(1)
+
+    classes_score = [0] * nb_classes
+    for b in range(nb_batches):
+        for c in range(nb_classes):
+            pred = p[b,c,:,:]  # Remove channel dimension
+            target = t[b,c,:,:].cpu().numpy()
+            pred = torch.sigmoid(pred)  # Convert logits to probabilities
+            pred = (pred > 0.5).float().detach().cpu().numpy()  # Binarize predictions
+            if len(pred.shape)==2:
+                tprec = cl_score(pred,skeletonize(target))
+                tsens = cl_score(target,skeletonize(pred))
+            elif len(pred.shape)==3:
+                tprec = cl_score(pred,skeletonize(target, method='lee'))
+                tsens = cl_score(target,skeletonize(pred, method='lee'))
+            classes_score[c] += 2*tprec*tsens/(tprec+tsens)
+    # print(f"TPrec: {tprec}, TRecall: {tsens}")
+    return np.mean(np.array(classes_score)/nb_batches)
