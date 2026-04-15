@@ -6,95 +6,24 @@ import data_utils
 from skimage.morphology import skeletonize
 
 
-###################### Utility functions for multi-label metrics ######################
-
-def get_num_class(nb_classes):
-    real_nb = 1
-    overlapping=0
-
-    while real_nb + overlapping != nb_classes:
-        overlapping += real_nb
-        real_nb += 1
-
-        if overlapping + real_nb > nb_classes:
-            print("Wrong number of class")
-            return
-
-    return real_nb
-
-def map_overlapping_classes(nb_classes):
-    """
-    Function to get the overlapping classes for the Dice coefficient.
-    Args:
-        nb_classes (int): Number of classes in the dataset.
-        include_background (bool): whether background must be counted as a class. If False (default), 
-    Returns:
-        list: mapping of overlapping classes. Each element is the list of overlapping classes for the corresponding class.
-    Example:
-        >>> get_overlapping_classes(2)
-        [[3], [3]]
-        >>> get_overlapping_classes(3)
-        [[4, 5], [4, 6], [5, 6]]
-    """
-    overlap_mapping = [[] for _ in range(nb_classes)]
-    for i in range(nb_classes-1):
-        for j in range(i+1, nb_classes):
-            overlap_mapping[i].append(nb_classes+i+j)
-            overlap_mapping[j].append(nb_classes+i+j)
-    return overlap_mapping
-
 def multi2onehot_tensor(x:torch.Tensor, # Non one-hot encoded targs
         dim:int=2 # The axis to stack for encoding (class dimension)
     ) -> torch.Tensor:
         "Creates one binary mask per class"
         return torch.stack([torch.where((x==1) | (x==3), 1, 0), torch.where((x==2) | (x==3), 1, 0)], dim=dim)
 
-def to_one_hot(preds, targets, mode="one_hot"):
-    """
-    Convert preds and targets to (B, C, H, W) binary tensors
-    """
-
-    if mode == "one_hot":
-        if isinstance(preds, list):
-            preds = preds[-1]
-
-        if preds.dtype != torch.bool:
-            preds = torch.sigmoid(preds) > 0.5
-
-        if targets.ndim == 3:
-            targets = targets.unsqueeze(1)
-
-        return preds.bool(), targets.bool()
-
-    elif mode == "multi_label":
-        preds = torch.argmax(preds, dim=1)
-
-        num_classes = get_num_class(preds.max().item())
-
-        overlap_mapping = map_overlapping_classes(num_classes)
-
-        pred_channels = []
-        target_channels = []
-
-        for cls in range(1, num_classes + 1):
-            pred_cls = (preds == cls)
-            target_cls = (targets == cls)
-
-            for overlap_cls in overlap_mapping[cls - 1]:
-                pred_cls |= (preds == overlap_cls)
-                target_cls |= (targets == overlap_cls)
-
-            pred_channels.append(pred_cls)
-            target_channels.append(target_cls)
-
-        return torch.stack(pred_channels, dim=1), torch.stack(target_channels, dim=1)
-
-    else:
-        raise ValueError(mode)
+def preprocess_tensors(preds, targets):
+    if isinstance(preds, list):
+        preds = preds[-1]
+    if targets.ndim == 3:
+        targets = targets.unsqueeze(1)
+    return preds, targets
 
 ###################### Sensitivity ######################
 
-def sensitivity_score(preds, targets, return_per_class=False, eps=1e-8):
+def sensitivity(preds, targets, return_per_class=False, eps=1e-8):
+    preds, targets = preprocess_tensors(preds, targets)
+
     B, C = preds.shape[:2]
 
     preds = preds.view(B, C, -1)
@@ -109,10 +38,6 @@ def sensitivity_score(preds, targets, return_per_class=False, eps=1e-8):
         return sens.mean(dim=0).cpu().numpy()
 
     return sens.mean()
-
-def sensitivity(preds, targets, mode="one_hot", return_per_class=False):
-    preds, targets = to_one_hot(preds, targets, mode)
-    return sensitivity_score(preds, targets, return_per_class)
 
 ###################### Hausdorff Distance ######################
 
@@ -149,7 +74,8 @@ def hausdorff_percentile_optimized(A, B, percentile=95):
     
     return HD
 
-def hausdorff_score(preds, targets, return_per_class=False, percentile=95):
+def hausdorff_distance(preds, targets, return_per_class=False, percentile=95):
+    preds, targets = preprocess_tensors(preds, targets)
     scores = []
 
     for c in range(preds.shape[1]):
@@ -174,13 +100,11 @@ def hausdorff_score(preds, targets, return_per_class=False, percentile=95):
 
     return np.nanmean(scores)
 
-def hausdorff_distance(preds, targets, mode="one_hot", return_per_class=False, percentile=95):
-    preds, targets = to_one_hot(preds, targets, mode)
-    return hausdorff_score(preds, targets, return_per_class, percentile)
-
 ###################### Dice ######################
 
-def dice_score(preds, targets, return_per_class=False, eps=1e-8):
+def dice(preds, targets, return_per_class=False, eps=1e-8):
+    preds, targets = preprocess_tensors(preds, targets)
+
     B, C = preds.shape[:2]
 
     preds = preds.view(B, C, -1)
@@ -196,10 +120,6 @@ def dice_score(preds, targets, return_per_class=False, eps=1e-8):
 
     return dice.mean()
 
-def dice(preds, targets, mode="one_hot", return_per_class=False):
-    preds, targets = to_one_hot(preds, targets, mode)
-    return dice_score(preds, targets, return_per_class)
-
 ###################### clDice ######################
 
 def cl_score(v, s):
@@ -214,7 +134,9 @@ def cl_score(v, s):
     """
     return np.sum(v*s)/np.sum(s)
 
-def cldice_score(preds, targets, return_per_class=False):
+def clDice(preds, targets, return_per_class=False, rrwnet=False):
+    preds, targets = preprocess_tensors(preds, targets)
+
     scores = []
 
     for c in range(preds.shape[1]):
@@ -235,7 +157,3 @@ def cldice_score(preds, targets, return_per_class=False):
         return scores
 
     return np.mean(scores)
-
-def clDice(preds, targets, mode="one_hot", return_per_class=False, rrwnet=False):
-    preds, targets = to_one_hot(preds, targets, mode)
-    return cldice_score(preds, targets, return_per_class)

@@ -25,37 +25,29 @@ class BinaryVesselDataset:
         return PILImage.create(x.astype(np.uint8)), PILMask.create(y.astype(np.uint8))
 
 class ArteryVeinDataset:
-    def __init__(self, hf_split, input=["M0", "correlation", "diasys"], one_hot = False, size=(512, 512)):
-        self.one_hot = one_hot
+    def __init__(self, hf_split, input=["M0", "correlation", "diasys"], size=(512, 512)):
         self.data = []
+
         for sample in hf_split:
             x = np.zeros((size[0], size[1], len(input)), dtype=np.uint8)
             for i, col in enumerate(input):
-                x[:,:,i] = np.array(sample[col].convert("L").resize(size, Image.BILINEAR))
+                x[:, :, i] = np.array(sample[col].convert("L").resize(size, Image.BILINEAR))
+
             artery = np.array(sample["maskArtery"].convert("L").resize(size, Image.NEAREST))
-            vein = np.array(sample["maskVein"].convert("L").resize(size, Image.NEAREST))
-            if self.one_hot:
-                y = np.stack([artery, vein], axis=0)
-            else:
-                y = np.zeros((size[0], size[1]), dtype=np.uint8)
-                y[artery > 0] = 1
-                y[vein > 0] +=2
+            vein   = np.array(sample["maskVein"].convert("L").resize(size, Image.NEAREST))
+
+            # encode as 0,1,2,3 (fastai-compatible)
+            y = np.zeros((size[0], size[1]), dtype=np.uint8)
+            y[artery > 0] = 1
+            y[vein > 0] += 2
+
             self.data.append((x, y))
 
-    def __len__(self):
-        return len(self.data)
+    def __len__(self): return len(self.data)
 
     def __getitem__(self, idx):
-        sample = self.data[idx]
-        x = sample[0]  # PIL Image
-        y = sample[1]  # PIL Image
-
-        if self.one_hot:
-            y = torch.tensor(y).float()          # (C, H, W)
-            y = TensorMask(y)
-        else:
-            y = PILMask.create(y.astype(np.uint8))
-        return PILImage.create(x.astype(np.uint8)), y
+        x, y = self.data[idx]
+        return PILImage.create(x), PILMask.create(y)
     
 
 # def multi2onehot(x:np.ndarray, # Non one-hot encoded targs
