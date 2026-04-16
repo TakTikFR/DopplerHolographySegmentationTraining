@@ -15,9 +15,16 @@ def multi2onehot_tensor(x:torch.Tensor, # Non one-hot encoded targs
 def preprocess_tensors(preds, targets):
     if isinstance(preds, list):
         preds = preds[-1]
+
+    if preds.dtype != torch.bool:
+        preds = torch.sigmoid(preds) > 0.5
+
     if targets.ndim == 3:
         targets = targets.unsqueeze(1)
-    return preds, targets
+
+    preds = preds[:, :targets.shape[1]]  # Ensure same number of classes
+
+    return preds.bool(), targets.bool()
 
 ###################### Sensitivity ######################
 
@@ -134,7 +141,7 @@ def cl_score(v, s):
     """
     return np.sum(v*s)/np.sum(s)
 
-def clDice(preds, targets, return_per_class=False, rrwnet=False):
+def clDice(preds, targets, return_per_class=False):
     preds, targets = preprocess_tensors(preds, targets)
 
     scores = []

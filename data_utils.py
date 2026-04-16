@@ -246,6 +246,15 @@ def split_channels(inputs, channels):
     return lists
 
 def show_masks(inputs, masks, masks_pred=None, multi=False, cmap='viridis', n=20):
+    """Displays input images, ground truth masks, and optionally predicted masks in a grid format.
+    Parameters:
+    - inputs: List of input images (numpy arrays).
+    - masks: List of ground truth masks (numpy arrays).
+    - masks_pred: List of predicted masks (numpy arrays), optional.
+    - multi: Boolean indicating if the masks are multi-class (True) or binary (False).
+    - cmap: Colormap for displaying images.
+    - n: Number of samples to display.
+    """
     nb_rows = min(len(inputs), n)
     channels = 1
     # plot images and masks
@@ -261,11 +270,12 @@ def show_masks(inputs, masks, masks_pred=None, multi=False, cmap='viridis', n=20
     
     for idx in range(nb_rows):
         for c in range(channels):
-            axes[idx][c].imshow(Image.fromarray((inputs[idx][c]*255).astype(np.uint8)), cmap=cmap)
+            axes[idx][c].imshow(Image.fromarray((np.squeeze(inputs[idx][c])*255).astype(np.uint8)), cmap=cmap)
             # axes[idx][c].set_title(inputs[idx][c])
-            axes[idx][channels].imshow(mask_to_rgb(masks[idx]) if multi else masks[idx], cmap="gray")
+            mask = np.squeeze(masks[idx])
+            axes[idx][channels].imshow(mask_to_rgb(mask) if multi else mask, cmap="gray")
         if masks_pred is not None:
-            axes[idx][channels+1].imshow(mask_to_rgb(masks_pred[idx]) if multi else masks_pred[idx][0], cmap="gray")
+            axes[idx][channels+1].imshow(mask_to_rgb(np.squeeze(masks_pred[idx])) if multi else np.squeeze(masks_pred[idx][0]), cmap="gray")
         
     # add subtitles
     for c in range(channels):
@@ -276,7 +286,7 @@ def show_masks(inputs, masks, masks_pred=None, multi=False, cmap='viridis', n=20
 
     plt.show()
 
-def predict_and_show(model, val_loader, cmap='viridis', multi=None, argmax=False, n=20):
+def predict_and_show(model, val_loader, cmap='viridis', multi=None, n=20):
     # predict masks
     masks_pred = []
     inputs = []
@@ -285,12 +295,11 @@ def predict_and_show(model, val_loader, cmap='viridis', multi=None, argmax=False
     for input, target in iter(val_loader):
         mask = model.predict(input.cuda())
         multi = mask.shape[1] > 1
-        if argmax:
-            mask = torch.argmax(mask, dim=1)
-        else:  # If we have several class, we need to apply a sigmoid and get the predictions
-            mask = torch.sigmoid(mask)
-            mask[mask<0.5] = 0
-            mask[mask>=0.5] = 1
+
+        mask = torch.sigmoid(mask)
+        mask[mask<0.5] = 0
+        mask[mask>=0.5] = 1
+
         inputs.append(input.squeeze(0).cpu().numpy())
         masks_pred.append(mask.squeeze(0).cpu().detach().numpy())
         targets.append(target.squeeze(0).cpu().numpy())

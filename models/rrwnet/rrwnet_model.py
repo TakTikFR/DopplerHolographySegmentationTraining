@@ -185,14 +185,17 @@ class RRWNet(RRWNetAll):
             self.second_u = UNetModule(n_classes-1, n_classes-1, base_ch)
 
     def forward(self, x):
+        if x.shape[1] == 1:
+            return super().forward(x)
+        
         predictions = []
 
         pred_1 = self.first_u(x)
         predictions.append(pred_1)
-        bv_logits = pred_1[:, 2:3, :, :] if pred_1.shape[1] > 3 else None
+        bv_logits = pred_1[:, 2:3, :, :] if pred_1.shape[1] >= 3 else None
         pred_1 = torch.sigmoid(pred_1)
 
-        pred_2 = self.second_u(pred_1[:, :2, :, :]) if pred_1.shape[1] > 3 else self.second_u(pred_1)
+        pred_2 = self.second_u(pred_1[:, :2, :, :]) if pred_1.shape[1] >= 3 else self.second_u(pred_1)
         
         pred = torch.cat((pred_2, bv_logits), dim=1) if bv_logits is not None else pred_2
         predictions.append(pred)
@@ -206,6 +209,5 @@ class RRWNet(RRWNetAll):
             pred = torch.cat((pred_2, bv_logits), dim=1) if bv_logits is not None else pred_2
             predictions.append(pred)
 
-        if self.training:
-            return predictions
-        return predictions[-1]
+        predictions = [o if o.ndim==4 else o.unsqueeze(1) for o in predictions]
+        return predictions if self.training else predictions[-1]

@@ -145,7 +145,10 @@ class UNetBlock(nn.Module):
         elif upsample_method == 'deconv':
             self.upsample = nn.ConvTranspose2d(in_channels=up_channels, out_channels=up_channels//scale_factor, kernel_size=kernel_size, stride=scale_factor, padding=padding, output_padding=1)
         elif upsample_method == 'bilinear':
-            self.upsample = nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=True)
+            self.upsample = nn.Sequential(
+                nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=True),
+                nn.Conv2d(up_channels, up_channels // scale_factor, kernel_size=1)
+            )
 
         in_channels = up_channels//2 + skip_channels
         out_channels = in_channels//2 if final else in_channels

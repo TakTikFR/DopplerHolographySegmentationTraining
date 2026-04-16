@@ -7,41 +7,6 @@ from fastai.vision.all import *
 from models.unet_block import UNetBlock, ICNRPixelShuffleUpsample, ConvLayer, ResBlock
 import model_utils
 
-def _get_first_layer(m):
-    "Access first layer of a model"
-    c,p,n = m,None,None  # child, parent, name
-    for n in next(m.named_parameters())[0].split('.')[:-1]:
-        p,c=c,getattr(c,n)
-    return c,p,n
-
-def _load_pretrained_weights(new_layer, previous_layer):
-    "Load pretrained weights based on number of input channels"
-    n_in = getattr(new_layer, 'in_channels')
-    if n_in==1:
-        # we take the sum
-        new_layer.weight.data = previous_layer.weight.data.sum(dim=1, keepdim=True)
-    elif n_in==2:
-        # we take first 2 channels + 50%
-        new_layer.weight.data = previous_layer.weight.data[:,:2] * 1.5
-    else:
-        # keep 3 channels weights and set others to null
-        new_layer.weight.data[:,:3] = previous_layer.weight.data
-        new_layer.weight.data[:,3:].zero_()
-
-def _update_first_layer(model, n_in, pretrained):
-    "Change first layer based on number of input channels"
-    if n_in == 3: return
-    first_layer, parent, name = _get_first_layer(model)
-    assert isinstance(first_layer, nn.Conv2d), f'Change of input channels only supported with Conv2d, found {first_layer.__class__.__name__}'
-    assert getattr(first_layer, 'in_channels') == 3, f'Unexpected number of input channels, found {getattr(first_layer, "in_channels")} while expecting 3'
-    params = {attr:getattr(first_layer, attr) for attr in 'out_channels kernel_size stride padding dilation groups padding_mode'.split()}
-    params['bias'] = getattr(first_layer, 'bias') is not None
-    params['in_channels'] = n_in
-    new_layer = nn.Conv2d(**params)
-    if pretrained:
-        _load_pretrained_weights(new_layer, first_layer)
-    setattr(parent, name, new_layer)
-
 class UResNet(nn.Module, PyTorchModelHubMixin):
     @classmethod
     def init_from_state_dict(cls, in_channels, n_classes, weight_file):
