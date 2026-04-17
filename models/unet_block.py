@@ -138,12 +138,17 @@ class SelfAttention(nn.Module):
         return o.view(*size).contiguous()
 
 class UNetBlock(nn.Module):
-    def __init__(self, up_channels, skip_channels, scale_factor=2, kernel_size=3, stride=1, padding=1, icnr=False, self_attention=False, final=False):
+    def __init__(self, up_channels, skip_channels, scale_factor=2, kernel_size=3, stride=1, padding=1, upsample_method='bilinear', self_attention=False, final=False):
         super().__init__()
-        if icnr:
+        if upsample_method == 'pixelshuffle':
             self.upsample = ICNRPixelShuffleUpsample(in_channels=up_channels, out_channels=up_channels//scale_factor, upscale_factor=scale_factor)
-        else :
+        elif upsample_method == 'deconv':
             self.upsample = nn.ConvTranspose2d(in_channels=up_channels, out_channels=up_channels//scale_factor, kernel_size=kernel_size, stride=scale_factor, padding=padding, output_padding=1)
+        elif upsample_method == 'bilinear':
+            self.upsample = nn.Sequential(
+                nn.Upsample(scale_factor=scale_factor, mode='bilinear', align_corners=True),
+                nn.Conv2d(up_channels, up_channels // scale_factor, kernel_size=1)
+            )
 
         in_channels = up_channels//2 + skip_channels
         out_channels = in_channels//2 if final else in_channels

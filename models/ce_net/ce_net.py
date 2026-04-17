@@ -96,13 +96,19 @@ def _update_first_layer(model, n_in, pretrained):
     setattr(parent, name, new_layer)
 
 class CE_Net(nn.Module):
-    def __init__(self, n_in=1, num_classes=2, pretrained=True, dropout=0.2, pixel_shuffle=False, self_attention=False):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, in_channels=1, n_classes=2, pretrained=True, dropout=0.2, upsample_method="deconv", self_attention=False):
         super().__init__()
 
         # Load pretrained ResNet34
         resnet = models.resnet34(weights=models.ResNet34_Weights.DEFAULT if pretrained else None)
 
-        _update_first_layer(resnet, n_in, pretrained)
+        _update_first_layer(resnet, in_channels, pretrained)
 
         # Extract ResNet34 encoder layers
         self.l0 = nn.Sequential(resnet.conv1, resnet.bn1, resnet.relu)  # 64 channels
@@ -135,14 +141,14 @@ class CE_Net(nn.Module):
         self.rmp = RMPBlock(in_channels=512, out_channels=512)
 
         # Decoder with skip connections, batch norm, and dropout
-        self.decoder4 = UNetBlock(512, 256, icnr=pixel_shuffle)
-        self.decoder3 = UNetBlock(512, 128, icnr=pixel_shuffle, self_attention=self_attention)
-        self.decoder2 = UNetBlock(384, 64, icnr=pixel_shuffle)
-        self.decoder1 = UNetBlock(256, 64, final=True, icnr=pixel_shuffle)
+        self.decoder4 = UNetBlock(512, 256, upsample_method=upsample_method)
+        self.decoder3 = UNetBlock(512, 128, upsample_method=upsample_method, self_attention=self_attention)
+        self.decoder2 = UNetBlock(384, 64, upsample_method=upsample_method)
+        self.decoder1 = UNetBlock(256, 64, final=True, upsample_method=upsample_method)
 
         # self.shuf = ICNRPixelShuffleUpsample(96, 96)
 
-        self.final_conv = nn.Conv2d(96, num_classes, kernel_size=1)
+        self.final_conv = nn.Conv2d(96, n_classes, kernel_size=1)
 
     def forward(self, x):
         # Encoder

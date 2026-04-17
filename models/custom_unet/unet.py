@@ -1,14 +1,25 @@
 import torch.nn as nn
 from models.unet_block import DoubleConv, Down, Up, ConvLayer, OutConv
+import torch
+from pathlib import Path
+import re
 
 class UNet(nn.Module):
-    def __init__(self, n_channels, n_classes, upsample='bilinear'):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        upsample_method = re.match(rf"UNet_([a-zA-Z]+).*", filename).group(1)
+        if upsample_method is None or upsample_method not in ['bilinear', 'deconv', 'pixelshuffle']:
+            raise ValueError(f"Invalid weight file name {filename}. Expected format: 'UNet_<upsample>_<loss>'. Upsample should be 'bilinear', 'deconv', or 'pixelshuffle'.")
+        
+        instance = cls(in_channels=in_channels, n_classes=n_classes, upsample=upsample_method)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, in_channels, n_classes, upsample='bilinear'):
         super(UNet, self).__init__()
-        self.n_channels = n_channels
-        self.n_classes = n_classes
-        self.upsample = upsample
 
-        self.inc = DoubleConv(n_channels, 64)
+        self.inc = DoubleConv(in_channels, 64)
         self.down1 = Down(64, 128)
         self.down2 = Down(128, 256)
         self.down3 = Down(256, 512)

@@ -6,9 +6,15 @@ from .out import OutHead
 
 
 class CENet(nn.Module):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
     def __init__(self, 
-        input_channels=1,
-        num_classes=1, 
+        in_channels=1,
+        n_classes=1, 
         scale_factors=[0.8, 0.4], 
         diffatt_num_heads=[2,2,2], 
         encoder='pvt_v2_b2', enc_pretrain=False, freeze_bb=False, 
@@ -24,7 +30,7 @@ class CENet(nn.Module):
         self.writer = writer
 
         self.backbone, channels = get_encoder2d(
-            input_channels=input_channels, 
+            input_channels=in_channels, 
             encoder=encoder, 
             pretrain=enc_pretrain, 
             freeze_bb=freeze_bb,
@@ -43,8 +49,8 @@ class CENet(nn.Module):
             dec_in_spatial=56,
             dec_in_channels=channels[-1], 
             x_in_spatial=224,
-            x_in_channels=input_channels,
-            out_channels=num_classes, 
+            x_in_channels=in_channels,
+            out_channels=n_classes, 
             merge_mode=out_merge_mode, # cat or add
             up_block=out_up_block, # up or tconv
             up_ks=out_up_ks, # [3 or 1] -> upsample kernel size

@@ -168,13 +168,19 @@ class global_block(nn.Module):
 
 
 class WNet2D(nn.Module):
-    def __init__(self, in_channel, num_classes, deep_supervised, layer_channel=[16, 32, 64, 128, 256], global_dim=[8, 16, 32, 64, 128], num_heads=[1, 2, 4, 8], sr_ratio=[8, 4, 2, 1]):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes, deep_supervised=False)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+
+    def __init__(self, in_channels, n_classes, deep_supervised, layer_channel=[16, 32, 64, 128, 256], global_dim=[8, 16, 32, 64, 128], num_heads=[1, 2, 4, 8], sr_ratio=[8, 4, 2, 1]):
         super(WNet2D, self).__init__()
 
         self.deep_supervised = deep_supervised
 
         self.input_l0 = nn.Sequential(
-            nn.Conv2d(in_channel, layer_channel[0], kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels, layer_channel[0], kernel_size=3, stride=1, padding=1),
             BNNorm2d(layer_channel[0]),
             Activation(),
             nn.Conv2d(layer_channel[0], layer_channel[0], kernel_size=3, stride=1, padding=1),
@@ -218,20 +224,20 @@ class WNet2D(nn.Module):
         self.encoder2_l4_local = local_block(layer_channel[3] + global_dim[3], layer_channel[3], layer_channel[4], down_or_up='down')
         self.encoder2_l4_global = global_block(layer_channel[3] + global_dim[3], global_dim[3], num_heads=num_heads[3], sr_ratio=sr_ratio[3])
 
-        self.decoder2_l4_local_output = nn.Conv2d(layer_channel[4], num_classes, kernel_size=1, stride=1, padding=0)
+        self.decoder2_l4_local_output = nn.Conv2d(layer_channel[4], n_classes, kernel_size=1, stride=1, padding=0)
         self.decoder2_l4_local = local_block(layer_channel[4] + global_dim[4], layer_channel[4], layer_channel[3], down_or_up='up')
 
-        self.decoder2_l3_local_output = nn.Conv2d(layer_channel[3], num_classes, kernel_size=1, stride=1, padding=0)
+        self.decoder2_l3_local_output = nn.Conv2d(layer_channel[3], n_classes, kernel_size=1, stride=1, padding=0)
         self.decoder2_l3_local = local_block(layer_channel[3] + global_dim[3], layer_channel[3], layer_channel[2], down_or_up='up')
 
-        self.decoder2_l2_local_output = nn.Conv2d(layer_channel[2], num_classes, kernel_size=1, stride=1, padding=0)
+        self.decoder2_l2_local_output = nn.Conv2d(layer_channel[2], n_classes, kernel_size=1, stride=1, padding=0)
         self.decoder2_l2_local = local_block(layer_channel[2] + global_dim[2], layer_channel[2], layer_channel[1], down_or_up='up')
 
-        self.decoder2_l1_local_output = nn.Conv2d(layer_channel[1], num_classes, kernel_size=1, stride=1, padding=0)
+        self.decoder2_l1_local_output = nn.Conv2d(layer_channel[1], n_classes, kernel_size=1, stride=1, padding=0)
         self.decoder2_l1_local = local_block(layer_channel[1] + global_dim[1], layer_channel[1], layer_channel[0], down_or_up='up')
         self.output_l0 = nn.Sequential(
             local_block(layer_channel[0] + global_dim[0], layer_channel[0], layer_channel[0], down_or_up=None),
-            nn.Conv2d(layer_channel[0], num_classes, kernel_size=1, stride=1, padding=0)
+            nn.Conv2d(layer_channel[0], n_classes, kernel_size=1, stride=1, padding=0)
         )
         # self.apply(self._init_weights)
 

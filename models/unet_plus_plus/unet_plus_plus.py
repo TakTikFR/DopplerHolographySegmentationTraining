@@ -65,7 +65,13 @@ class UNet(nn.Module):
 
 
 class NestedUNet(nn.Module):
-    def __init__(self, num_classes, input_channels=3, deep_supervision=False, **kwargs):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, n_classes, in_channels=3, deep_supervision=False, **kwargs):
         super().__init__()
 
         nb_filter = [32, 64, 128, 256, 512]
@@ -75,7 +81,7 @@ class NestedUNet(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        self.conv0_0 = VGGBlock(input_channels, nb_filter[0], nb_filter[0])
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0])
         self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1])
         self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2])
         self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3])
@@ -96,12 +102,12 @@ class NestedUNet(nn.Module):
         self.conv0_4 = VGGBlock(nb_filter[0]*4+nb_filter[1], nb_filter[0], nb_filter[0])
 
         if self.deep_supervision:
-            self.final1 = nn.Conv2d(nb_filter[0], num_classes, kernel_size=1)
-            self.final2 = nn.Conv2d(nb_filter[0], num_classes, kernel_size=1)
-            self.final3 = nn.Conv2d(nb_filter[0], num_classes, kernel_size=1)
-            self.final4 = nn.Conv2d(nb_filter[0], num_classes, kernel_size=1)
+            self.final1 = nn.Conv2d(nb_filter[0], n_classes, kernel_size=1)
+            self.final2 = nn.Conv2d(nb_filter[0], n_classes, kernel_size=1)
+            self.final3 = nn.Conv2d(nb_filter[0], n_classes, kernel_size=1)
+            self.final4 = nn.Conv2d(nb_filter[0], n_classes, kernel_size=1)
         else:
-            self.final = nn.Conv2d(nb_filter[0], num_classes, kernel_size=1)
+            self.final = nn.Conv2d(nb_filter[0], n_classes, kernel_size=1)
 
 
     def forward(self, input):

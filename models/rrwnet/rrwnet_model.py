@@ -1,7 +1,9 @@
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import re
 
 class ConvBlock(nn.Module):
     def __init__(self, input_ch=3, output_ch=64, activf=nn.ReLU, bias=True):
@@ -124,10 +126,22 @@ class RRWNetAll(nn.Module):
     """Network with all channels refined using a second recurrent
     UNet.
     """
-    def __init__(self, input_ch, output_ch, base_ch, num_iterations=5):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        iterations = re.match(rf"RRWNet_(\d+)_.*", filename).group(1)
+        if iterations is not None and int(iterations) > 0:
+            iterations = int(iterations)
+        else:
+            raise ValueError("Invalid weight file name. Expected format: 'RRWNet_<iterations>_<loss>'")
+        instance = cls(in_channels=in_channels, n_classes=n_classes, base_ch=64, num_iterations=iterations)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+    
+    def __init__(self, in_channels, n_classes, base_ch, num_iterations=5):
         super().__init__()
-        self.first_u = UNetModule(input_ch, output_ch, base_ch)
-        self.second_u = UNetModule(output_ch, output_ch, base_ch)
+        self.first_u = UNetModule(in_channels, n_classes, base_ch)
+        self.second_u = UNetModule(n_classes, n_classes, base_ch)
         self.num_iterations = num_iterations
 
     def forward(self, x):
@@ -153,31 +167,47 @@ class RRWNet(RRWNetAll):
     """RRWNetAll but refining only A/V maps.
     Proposed in the paper.
     """
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        filename = Path(weight_file).name
+        iterations = re.match(rf"RRWNet_(\d+)_.*", filename).group(1)
+        if iterations is not None and int(iterations) > 0:
+            iterations = int(iterations)
+        else:
+            raise ValueError("Invalid weight file name. Expected format: 'RRWNet_<iterations>_<loss>'")
+        instance = cls(in_channels=in_channels, n_classes=n_classes, base_ch=64, num_iterations=iterations)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
 
-    def __init__(self, input_ch, output_ch, base_ch, num_iterations=5):
-        super().__init__(input_ch, output_ch, base_ch, num_iterations)
-        self.second_u = UNetModule(output_ch-1, output_ch-1, base_ch)
+    def __init__(self, in_channels, n_classes, base_ch, num_iterations=5):
+        super().__init__(in_channels, n_classes, base_ch, num_iterations)
+        if n_classes > 1:
+            self.second_u = UNetModule(n_classes-1, n_classes-1, base_ch)
 
     def forward(self, x):
+        if x.shape[1] == 1:
+            return super().forward(x)
+        
         predictions = []
 
         pred_1 = self.first_u(x)
         predictions.append(pred_1)
-        bv_logits = pred_1[:, 2:3, :, :]
+        bv_logits = pred_1[:, 2:3, :, :] if pred_1.shape[1] >= 3 else None
         pred_1 = torch.sigmoid(pred_1)
-        bv = pred_1[:, 2:3, :, :]
 
-        # print(f"{pred_1.shape=}")
-        # print(f"{pred_1[:, :2, :, :].shape=}")
-
-        pred_2 = self.second_u(pred_1[:, :2, :, :])
-        predictions.append(torch.cat((pred_2, bv_logits), dim=1))
+        pred_2 = self.second_u(pred_1[:, :2, :, :]) if pred_1.shape[1] >= 3 else self.second_u(pred_1)
+        
+        pred = torch.cat((pred_2, bv_logits), dim=1) if bv_logits is not None else pred_2
+        predictions.append(pred)
 
         for _ in range(self.num_iterations):
             pred_2 = torch.sigmoid(pred_2)
             # print(f"{torch.cat((pred_2, bv_logits), dim=1).shape=}")
             # pred_2 = torch.cat((pred_2, bv), dim=1)
             pred_2 = self.second_u(pred_2)
-            predictions.append(torch.cat((pred_2, bv_logits), dim=1))
 
-        return predictions
+            pred = torch.cat((pred_2, bv_logits), dim=1) if bv_logits is not None else pred_2
+            predictions.append(pred)
+
+        predictions = [o if o.ndim==4 else o.unsqueeze(1) for o in predictions]
+        return predictions if self.training else predictions[-1]

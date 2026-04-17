@@ -46,12 +46,18 @@ class up_conv(nn.Module):
         return x
     
 class AttentionUNet(nn.Module):
-    def __init__(self,img_ch=3,output_ch=1):
+    @classmethod
+    def init_from_state_dict(cls, in_channels, n_classes, weight_file):
+        instance = cls(in_channels=in_channels, n_classes=n_classes)
+        instance.load_state_dict(torch.load(weight_file))
+        return instance
+
+    def __init__(self,in_channels=3,n_classes=1):
         super(AttentionUNet,self).__init__()
         
         self.Maxpool = nn.MaxPool2d(kernel_size=2,stride=2)
 
-        self.Conv1 = DoubleConv(in_channels=img_ch, out_channels=64)
+        self.Conv1 = DoubleConv(in_channels=in_channels, out_channels=64)
         self.Conv2 = DoubleConv(in_channels=64, out_channels=128)
         self.Conv3 = DoubleConv(in_channels=128, out_channels=256)
         self.Conv4 = DoubleConv(in_channels=256, out_channels=512)
@@ -73,7 +79,7 @@ class AttentionUNet(nn.Module):
         self.Att2 = AttentionBlock(F_g=64,F_l=64,F_int=32)
         self.Up_conv2 = DoubleConv(in_channels=128, out_channels=64)
 
-        self.Conv_1x1 = nn.Conv2d(64,output_ch,kernel_size=1,stride=1,padding=0)
+        self.Conv_1x1 = nn.Conv2d(64,n_classes,kernel_size=1,stride=1,padding=0)
 
     def forward(self,x):
         # encoding path
