@@ -40,18 +40,11 @@ class Diloco(Strategy):
         self.momentum = momentum
         self.eps = eps
 
-        # Optimizers configurables
-        self.inner_optimizer_cls = inner_optimizer_cls
-        self.inner_optimizer_kwargs = inner_optimizer_kwargs or {
-            'lr': inner_lr, 'betas': betas, 'eps': eps, 'weight_decay': weight_decay
-        }
-        self.outer_optimizer_cls = outer_optimizer_cls
-        self.outer_optimizer_kwargs = outer_optimizer_kwargs or {
-            'lr': outer_lr, 'momentum': momentum, 'nesterov': True
-        }
-
-        # Loss function configurable (None = utiliser celle du modèle HuggingFace)
         self.loss_fn = loss_fn
+        self.inner_optimizer_cls    = inner_optimizer_cls    or torch.optim.AdamW
+        self.inner_optimizer_kwargs = inner_optimizer_kwargs or {"lr": inner_lr}
+        self.outer_optimizer_cls    = outer_optimizer_cls    or torch.optim.SGD
+        self.outer_optimizer_kwargs = outer_optimizer_kwargs or {"lr": 0.7, "nesterov": True, "momentum": 0.9}
 
     @override
     def _init_node(self, model, rank, world_size, total_steps=100):

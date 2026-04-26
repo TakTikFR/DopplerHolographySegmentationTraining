@@ -25,6 +25,7 @@ class Trainer:
         all_reduce = AllReduce(strategy.outer_opt, strategy.inner_opt)
         
         self.model.train()
+        loss_history = []
 
         for outer_step in range(total_steps):
             self.dataloader.sampler.set_epoch(outer_step)
@@ -44,6 +45,7 @@ class Trainer:
                 loss = strategy.step(batch)
                 running_loss += loss
 
+            loss_history.append(running_loss / strategy.H)
             # Parameters synchronisation
             all_reduce.aggregate()
 
@@ -51,6 +53,8 @@ class Trainer:
             strategy.outer_opt.step()
 
             print(f"Rank: {self.rank} - Outer step: {outer_step} - Average loss: {running_loss / strategy.H}")
+
+        return loss_history
 
 import numpy as np
 import torch
@@ -70,10 +74,12 @@ def _seg_collate_fn(batch):
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def diloco_worker(rank, world_size, model, dataset, batch_size, loss_fn, num_epochs, lr, save_path):
-    import os, sys
+def diloco_worker(rank, world_size, model, dataset, batch_size, loss_fn,
+                  num_epochs, lr, save_path,
+                  inner_optimizer_cls=None, inner_optimizer_kwargs=None,
+                  outer_optimizer_cls=None,  outer_optimizer_kwargs=None):
+    import os, sys, json, torch
     from torch.utils.data import DataLoader, DistributedSampler
-
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12355'
     os.environ['LOCAL_RANK']  = str(rank)
@@ -82,45 +88,44 @@ def diloco_worker(rank, world_size, model, dataset, batch_size, loss_fn, num_epo
     sys.path.insert(0, os.path.dirname(__file__))
     from utils import setup, cleanup
     from strategy import Diloco
-    import torch.distributed as dist
 
     setup('nccl', rank, world_size)
 
     class ModelOutput:
-        def __init__(self, logits):
-            self.logits = logits  # ← logits, pas loss
+        def __init__(self, logits): self.logits = logits
 
     class SegWrapper(torch.nn.Module):
-        def __init__(self, m, fn):
-            super().__init__()
-            self.m = m
-            self.fn = fn
-
+        def __init__(self, m, fn): super().__init__(); self.m = m; self.fn = fn
         def forward(self, pixel_values, labels, **kw):
-            logits = self.m(pixel_values)  # sortie brute du modèle
-            return ModelOutput(logits=logits)  # strategy.py calcule la loss lui-même
-
-        def parameters(self, recurse=True):
-            return self.m.parameters(recurse)
+            return ModelOutput(self.m(pixel_values))
+        def parameters(self, recurse=True): return self.m.parameters(recurse)
 
     wrapped = SegWrapper(model, loss_fn)
-    # ─────────────────────────────────────────────────────────────────────────
 
     sampler = DistributedSampler(dataset, num_replicas=world_size, rank=rank, shuffle=True)
-    dataloader = DataLoader(
-        dataset, batch_size=batch_size, sampler=sampler,
-        num_workers=2, collate_fn=_seg_collate_fn,
-    )
+    dataloader = DataLoader(dataset, batch_size=batch_size, sampler=sampler,
+                            num_workers=2, collate_fn=_seg_collate_fn)
 
-    strategy = Diloco(inner_lr=lr, loss_fn=loss_fn)
-    trainer  = Trainer(rank, world_size, wrapped, dataloader)   # ← wrapped
-    trainer.train(strategy, total_steps=num_epochs)
-    
-    # ── Sauvegarde depuis rank 0 uniquement ──────────────────────────────────
+    strategy = Diloco(
+        loss_fn=loss_fn,
+        inner_optimizer_cls=inner_optimizer_cls,
+        inner_optimizer_kwargs=inner_optimizer_kwargs or {"lr": lr},
+        outer_optimizer_cls=outer_optimizer_cls,
+        outer_optimizer_kwargs=outer_optimizer_kwargs,
+    )
+    trainer = Trainer(rank, world_size, wrapped, dataloader)
+    loss_history = trainer.train(strategy, total_steps=num_epochs)
+
     if rank == 0:
         torch.save(wrapped.m.state_dict(), save_path)
-        print(f"Model saved to {save_path}")
-    # ────────────────────────────────────────────────────────────────────────
+        
+        # ── Sauvegarder la loss history à côté du .pth ────────────────────
+        loss_path = save_path.replace(".pth", "_loss.json")
+        with open(loss_path, "w") as f:
+            json.dump(loss_history, f)
+        # ──────────────────────────────────────────────────────────────────
 
-    dist.barrier()
+        print(f"[rank 0] Saved → {save_path}")
+
+    torch.distributed.barrier()
     cleanup()
